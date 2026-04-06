@@ -15,7 +15,7 @@ jobs:
         with:
           extra_nix_config: |
             extra-substituters = https://stt-nix.cachix.org
-            extra-trusted-public-keys = stt-nix.cachix.org-1:REPLACE_WITH_YOUR_PUBLIC_KEY
+            extra-trusted-public-keys = stt-nix.cachix.org-1:qIY27UyHLYEhrAoNXpmilgQFJ7oXv0IIpScCUx25eWI=
 
       - uses: cachix/cachix-action@v15
         with:
@@ -35,7 +35,7 @@ jobs:
         with:
           extra_nix_config: |
             extra-substituters = https://cuda-maintainers.cachix.org https://stt-nix.cachix.org
-            extra-trusted-public-keys = cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E= stt-nix.cachix.org-1:REPLACE_WITH_YOUR_PUBLIC_KEY
+            extra-trusted-public-keys = cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E= stt-nix.cachix.org-1:qIY27UyHLYEhrAoNXpmilgQFJ7oXv0IIpScCUx25eWI=
 
       - uses: cachix/cachix-action@v15
         with:
