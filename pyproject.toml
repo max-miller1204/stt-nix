@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stt-nix"
+version = "0.1.0"
+description = "Simple speech-to-text for NixOS with GPU support"
+requires-python = ">=3.11"
+dependencies = [
+  "faster-whisper",
+  "sounddevice",
+  "dbus-fast",
+  "evdev",
+  "httpx",
+  "numpy",
+  "tomli",
+]
+
+[project.scripts]
+stt = "stt_nix.cli:main"
+stt-nix = "stt_nix.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

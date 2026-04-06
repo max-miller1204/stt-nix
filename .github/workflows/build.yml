@@ -1,0 +1,46 @@
+name: Build and cache
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            extra-substituters = https://stt-nix.cachix.org
+            extra-trusted-public-keys = stt-nix.cachix.org-1:REPLACE_WITH_YOUR_PUBLIC_KEY
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: stt-nix
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Build CPU variant
+        run: nix build .#cpu
+
+  cuda:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            extra-substituters = https://cuda-maintainers.cachix.org https://stt-nix.cachix.org
+            extra-trusted-public-keys = cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E= stt-nix.cachix.org-1:REPLACE_WITH_YOUR_PUBLIC_KEY
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: stt-nix
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Build CUDA variant
+        run: nix build .#default
