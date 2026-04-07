@@ -89,8 +89,8 @@
       };
 
       overlays.default = final: prev: {
-        stt-nix = self.packages.${final.system}.cpu;
-        stt-nix-cuda = self.packages.${final.system}.default;
+        stt-nix = self.packages.${final.stdenv.hostPlatform.system}.cpu;
+        stt-nix-cuda = self.packages.${final.stdenv.hostPlatform.system}.default;
       };
 
       homeManagerModules.default = import ./module.nix;
