@@ -3,11 +3,12 @@
 import asyncio
 import glob
 import logging
-
 import evdev
 import evdev.ecodes
 
 log = logging.getLogger(__name__)
+
+_RESCAN_DELAY = 2  # seconds to wait before rescanning after a device change
 
 # Map modifier names to all their possible keycodes
 MODIFIER_KEYS = {
@@ -51,9 +52,11 @@ class HotkeyListener:
         self.mode = mode
         self.on_start = on_start
         self.on_stop = on_stop
-        self._devices: list[evdev.InputDevice] = []
+        self._devices: dict[str, evdev.InputDevice] = {}  # path -> device
         self._active = False
         self._pressed_keys: set[int] = set()
+        self._rescan_pending = False
+        self._inotify_task = None
 
     def _modifiers_held(self) -> bool:
         """Check if all required modifier groups are satisfied."""
@@ -61,9 +64,13 @@ class HotkeyListener:
             return True
         return bool(self._pressed_keys & self.modifiers)
 
-    async def run(self):
+    def _scan_devices(self):
+        """Find new input devices that have the target key and aren't already tracked."""
+        new_devices = []
         paths = sorted(glob.glob("/dev/input/event*"))
         for path in paths:
+            if path in self._devices:
+                continue
             try:
                 dev = evdev.InputDevice(path)
             except PermissionError:
@@ -79,11 +86,40 @@ class HotkeyListener:
                 continue
 
             log.info("Listening on %s (%s)", dev.name, dev.path)
-            self._devices.append(dev)
+            self._devices[path] = dev
+            new_devices.append(dev)
+        return new_devices
+
+    async def run(self):
+        new_devices = self._scan_devices()
+        for dev in new_devices:
             asyncio.ensure_future(self._read_loop(dev))
 
         if not self._devices:
             log.error("No input devices found with the target key")
+
+        # Watch for new devices appearing in /dev/input/
+        self._inotify_task = asyncio.ensure_future(self._watch_dev_input())
+
+    async def _watch_dev_input(self):
+        """Poll for new event devices appearing in /dev/input/."""
+        while True:
+            await asyncio.sleep(5)
+            new_devices = self._scan_devices()
+            for dev in new_devices:
+                log.info("New device detected: %s (%s)", dev.name, dev.path)
+                asyncio.ensure_future(self._read_loop(dev))
+
+    async def _schedule_rescan(self):
+        """Debounced rescan after a device disconnects."""
+        if self._rescan_pending:
+            return
+        self._rescan_pending = True
+        await asyncio.sleep(_RESCAN_DELAY)
+        self._rescan_pending = False
+        new_devices = self._scan_devices()
+        for dev in new_devices:
+            asyncio.ensure_future(self._read_loop(dev))
 
     async def _read_loop(self, dev: evdev.InputDevice):
         try:
@@ -117,10 +153,18 @@ class HotkeyListener:
                             await self.on_start()
                         self._active = not self._active
         except OSError:
-            log.debug("Device %s disconnected", dev.path)
+            log.info("Device disconnected: %s (%s)", dev.name, dev.path)
+            self._devices.pop(dev.path, None)
+            if self._active:
+                self._active = False
+                log.info("Cancelling active recording due to device disconnect")
+                await self.on_stop()
+            asyncio.ensure_future(self._schedule_rescan())
 
     def stop(self):
-        for dev in self._devices:
+        if self._inotify_task:
+            self._inotify_task.cancel()
+        for dev in self._devices.values():
             try:
                 dev.close()
             except OSError:
