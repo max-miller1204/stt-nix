@@ -7,40 +7,67 @@ Simple speech-to-text for NixOS. Runs locally on your GPU or uses the Groq API.
 - **Local GPU transcription** via [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CUDA)
 - **Groq API** as a cloud alternative
 - **System tray icon** showing idle/recording/transcribing state
-- **Push-to-talk**: toggle mode (press to start/stop) or hold-to-talk (via evdev)
-- **Clipboard-paste output**: text is pasted into the focused window, no spacing issues
+- **Hold-to-talk** or **toggle** hotkey with modifier support (e.g. `ctrl+space`)
+- **Clipboard-paste output** via `dotool` — configurable paste keystroke
 - Auto-detects CUDA availability, falls back to CPU
 
 ## Install
 
-### With Cachix (pre-built, no compilation)
+### Home Manager module (recommended)
 
-```bash
-# Add the binary cache (skip the long CUDA build)
-nix run nixpkgs#cachix -- use stt-nix
+```nix
+# flake.nix
+{
+  inputs.stt-nix.url = "github:max-miller1204/stt-nix";
+}
 
-# Run directly
-nix run github:max-miller1204/stt-nix
+# In your Home Manager config:
+{
+  imports = [ inputs.stt-nix.homeManagerModules.default ];
 
-# Or install to your profile
-nix profile install github:max-miller1204/stt-nix
+  services.stt-nix = {
+    enable = true;
+    groqApiKeyFile = "/path/to/env-file"; # file containing GROQ_API_KEY=gsk_...
+    settings = {
+      transcription = {
+        backend = "groq";
+        language = "en";
+      };
+      output.paste_key = "ctrl+shift+v";
+      hotkey = {
+        enabled = true;
+        key = "ctrl+space";
+        mode = "hold";
+      };
+    };
+  };
+}
 ```
 
-### In a flake
+This creates a systemd user service that starts with your graphical session.
+
+### With overlay
 
 ```nix
 {
   inputs.stt-nix.url = "github:max-miller1204/stt-nix";
 
-  # Add to your packages
-  environment.systemPackages = [ inputs.stt-nix.packages.x86_64-linux.default ];
+  # Add overlay
+  nixpkgs.overlays = [ inputs.stt-nix.overlays.default ];
+
+  # Provides: pkgs.stt-nix (CPU) and pkgs.stt-nix-cuda
+  environment.systemPackages = [ pkgs.stt-nix ];
 }
 ```
 
-### CPU-only (no CUDA needed, fast build)
+### Run directly
 
 ```bash
+# CPU-only (fast build)
 nix run github:max-miller1204/stt-nix#cpu
+
+# With CUDA
+nix run github:max-miller1204/stt-nix
 ```
 
 ## Usage
@@ -63,14 +90,6 @@ stt status          # Show current state (idle/recording/transcribing)
 stt download-model base  # Pre-download a model (tiny/base/small/medium)
 ```
 
-### Keybinding (niri example)
-
-```kdl
-binds {
-    Ctrl+Space { spawn "stt" "toggle"; }
-}
-```
-
 ## Configuration
 
 Create `~/.config/stt-nix/config.toml`:
@@ -88,10 +107,11 @@ api_key = ""            # or set GROQ_API_KEY env var
 
 [output]
 paste_delay_ms = 100
+paste_key = "ctrl+v"    # "ctrl+shift+v" for terminals
 
 [hotkey]
 enabled = false
-key = "KEY_RIGHTALT"    # evdev key name
+key = "ctrl+space"      # supports modifiers: ctrl, shift, alt, super
 mode = "hold"           # "hold" or "toggle"
 ```
 
@@ -134,17 +154,8 @@ Or in NixOS configuration:
 users.users.yourname.extraGroups = [ "input" ];
 ```
 
-Then enable in config:
-
-```toml
-[hotkey]
-enabled = true
-key = "KEY_RIGHTALT"
-mode = "hold"
-```
-
 ## Requirements
 
 - NixOS with PipeWire
-- Wayland compositor (uses `wtype` and `wl-clipboard`)
+- Wayland compositor (uses `wl-clipboard` and `dotool`)
 - NVIDIA GPU for local CUDA transcription (optional, CPU works too)
