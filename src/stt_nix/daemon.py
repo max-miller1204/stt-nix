@@ -142,7 +142,8 @@ class Daemon:
         await stop.wait()
 
         # Cleanup
-        self._server.close()
+        if self._server:
+            self._server.close()
         path = self.socket_path()
         if os.path.exists(path):
             os.unlink(path)
