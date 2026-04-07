@@ -28,12 +28,14 @@ def parse_hotkey(key_str: str) -> tuple[set[int], int]:
         if part in MODIFIER_KEYS:
             modifiers |= MODIFIER_KEYS[part]
         else:
-            # Try as evdev key name
-            name = f"KEY_{part.upper()}"
-            if name in evdev.ecodes.ecodes:
-                key_code = evdev.ecodes.ecodes[name]
-            elif part in evdev.ecodes.ecodes:
-                key_code = evdev.ecodes.ecodes[part]
+            # Try as evdev key name in multiple forms
+            upper = part.upper()
+            if upper in evdev.ecodes.ecodes:
+                # e.g. "KEY_RIGHTALT" passed directly
+                key_code = evdev.ecodes.ecodes[upper]
+            elif f"KEY_{upper}" in evdev.ecodes.ecodes:
+                # e.g. "space" -> "KEY_SPACE"
+                key_code = evdev.ecodes.ecodes[f"KEY_{upper}"]
             else:
                 raise ValueError(f"Unknown key: {part}")
 
