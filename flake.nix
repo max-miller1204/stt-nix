@@ -88,6 +88,13 @@
         cpu = mkSttNix pkgsCpu;
       };
 
+      overlays.default = final: prev: {
+        stt-nix = self.packages.${final.system}.cpu;
+        stt-nix-cuda = self.packages.${final.system}.default;
+      };
+
+      homeManagerModules.default = import ./module.nix;
+
       apps.${system} = {
         default = {
           type = "app";
