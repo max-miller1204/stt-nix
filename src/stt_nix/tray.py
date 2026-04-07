@@ -117,7 +117,7 @@ class StatusNotifierItemInterface(ServiceInterface):
         self._state = state
         r, g, b = STATE_COLORS[state]
         self._icon_pixmap = _pixmap_variant(r, g, b)
-        self.emit_properties_changed({"IconPixmap": Variant("a(iiay)", self._icon_pixmap)})
+        self.emit_properties_changed({"IconPixmap": self._icon_pixmap})
         self.NewIcon()
 
 

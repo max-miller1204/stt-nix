@@ -49,8 +49,14 @@ class Daemon:
             await writer.drain()
         except Exception as e:
             log.error("Client error: %s", e)
+            try:
+                writer.write(json.dumps({"error": str(e)}).encode())
+                await writer.drain()
+            except Exception:
+                pass
         finally:
             writer.close()
+            await writer.wait_closed()
 
     async def handle_command(self, cmd: str) -> dict:
         if cmd == "toggle":
@@ -79,8 +85,11 @@ class Daemon:
                 text = await loop.run_in_executor(self.executor, self.transcriber.transcribe, audio)
                 log.info("Transcribed: %s", text)
                 if text.strip():
-                    paste_delay = self.config["output"]["paste_delay_ms"]
-                    await loop.run_in_executor(self.executor, paste_text, text, paste_delay)
+                    out_cfg = self.config["output"]
+                    await loop.run_in_executor(
+                        self.executor, paste_text, text,
+                        out_cfg["paste_delay_ms"], out_cfg["paste_key"],
+                    )
             except Exception as e:
                 log.error("Transcription failed: %s", e)
                 self.set_state(State.IDLE)

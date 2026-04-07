@@ -35,6 +35,7 @@ DEFAULT_CONFIG = {
     },
     "output": {
         "paste_delay_ms": 100,
+        "paste_key": "ctrl+v",
     },
     "hotkey": {
         "enabled": False,

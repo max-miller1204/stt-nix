@@ -61,12 +61,12 @@
             wrapProgram $out/bin/stt \
               --prefix PATH : ${pkgs.lib.makeBinPath [
                 pkgs.wl-clipboard
-                pkgs.wtype
+                pkgs.dotool
               ]}
             wrapProgram $out/bin/stt-nix \
               --prefix PATH : ${pkgs.lib.makeBinPath [
                 pkgs.wl-clipboard
-                pkgs.wtype
+                pkgs.dotool
               ]}
           '';
 

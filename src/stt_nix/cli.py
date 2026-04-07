@@ -16,8 +16,17 @@ def send_command(cmd: dict) -> dict | None:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.connect(path)
         sock.sendall(json.dumps(cmd).encode() + b"\n")
-        data = sock.recv(4096)
+        chunks = []
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
         sock.close()
+        data = b"".join(chunks)
+        if not data:
+            print("Error: empty response from daemon", file=sys.stderr)
+            sys.exit(1)
         return json.loads(data.decode())
     except ConnectionRefusedError:
         print("Error: stt-nix daemon is not running", file=sys.stderr)
