@@ -5,29 +5,124 @@ from __future__ import annotations
 import logging
 import os
 import struct
+import zlib
 
-from dbus_fast import BusType, PropertyAccess, Variant
+from dbus_fast import BusType, PropertyAccess
 from dbus_fast.aio import MessageBus
 from dbus_fast.service import ServiceInterface, dbus_property, signal
 
 log = logging.getLogger(__name__)
 
-ICON_SIZE = 22
 
-STATE_COLORS: dict[str, tuple[int, int, int]] = {
-    "idle": (0x80, 0x80, 0x80),
-    "recording": (0xFF, 0x44, 0x44),
-    "transcribing": (0x44, 0x88, 0xFF),
-}
+def _decode_png(path: str) -> tuple[int, int, bytes]:
+    """Minimal PNG decoder — returns (width, height, RGBA bytes)."""
+    with open(path, "rb") as f:
+        sig = f.read(8)
+        assert sig == b"\x89PNG\r\n\x1a\n", "Not a PNG"
+
+        idat_data = b""
+        width = height = bit_depth = color_type = 0
+
+        while True:
+            raw = f.read(8)
+            if len(raw) < 8:
+                break
+            length, ctype = struct.unpack(">I4s", raw)
+            data = f.read(length)
+            f.read(4)  # CRC
+
+            if ctype == b"IHDR":
+                width, height, bit_depth, color_type = struct.unpack(">IIbB", data[:10])
+            elif ctype == b"IDAT":
+                idat_data += data
+            elif ctype == b"IEND":
+                break
+
+        raw_data = zlib.decompress(idat_data)
+
+        # Only handle 8-bit RGBA (color_type=6)
+        assert color_type == 6 and bit_depth == 8
+        stride = width * 4 + 1  # +1 for filter byte
+        pixels = bytearray()
+
+        prev_row = bytearray(width * 4)
+        for y in range(height):
+            row_start = y * stride
+            filt = raw_data[row_start]
+            row = bytearray(raw_data[row_start + 1:row_start + stride])
+
+            if filt == 0:  # None
+                pass
+            elif filt == 1:  # Sub
+                for i in range(4, len(row)):
+                    row[i] = (row[i] + row[i - 4]) & 0xFF
+            elif filt == 2:  # Up
+                for i in range(len(row)):
+                    row[i] = (row[i] + prev_row[i]) & 0xFF
+            elif filt == 3:  # Average
+                for i in range(len(row)):
+                    left = row[i - 4] if i >= 4 else 0
+                    row[i] = (row[i] + (left + prev_row[i]) // 2) & 0xFF
+            elif filt == 4:  # Paeth
+                for i in range(len(row)):
+                    a = row[i - 4] if i >= 4 else 0
+                    b = prev_row[i]
+                    c = prev_row[i - 4] if i >= 4 else 0
+                    p = a + b - c
+                    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                    if pa <= pb and pa <= pc:
+                        pr = a
+                    elif pb <= pc:
+                        pr = b
+                    else:
+                        pr = c
+                    row[i] = (row[i] + pr) & 0xFF
+
+            pixels.extend(row)
+            prev_row = row
+
+    return width, height, bytes(pixels)
 
 
-def _make_icon_pixmap(r: int, g: int, b: int) -> bytes:
-    pixel = struct.pack(">BBBB", 0xFF, r, g, b)
-    return pixel * (ICON_SIZE * ICON_SIZE)
+def _rgba_to_argb(rgba: bytes, w: int, h: int, invert: bool = True) -> bytes:
+    """Convert RGBA to ARGB32 big-endian (SNI pixmap format).
+       If invert=True, flip dark icons to white for dark tray backgrounds."""
+    buf = bytearray(w * h * 4)
+    for i in range(w * h):
+        si = i * 4
+        r, g, b, a = rgba[si], rgba[si + 1], rgba[si + 2], rgba[si + 3]
+        if invert:
+            r, g, b = 255 - r, 255 - g, 255 - b
+        buf[si:si + 4] = struct.pack(">BBBB", a, r, g, b)
+    return bytes(buf)
 
 
-def _pixmap_variant(r: int, g: int, b: int) -> list[tuple[int, int, bytes]]:
-    return [(ICON_SIZE, ICON_SIZE, _make_icon_pixmap(r, g, b))]
+def _load_icon(state: str) -> tuple[int, int, bytes]:
+    """Load a state icon PNG and convert to ARGB."""
+    for base in [os.path.join(os.path.dirname(__file__), "icons"),
+                 os.path.join(os.path.dirname(__file__), "..", "..", "assets", "icons")]:
+        path = os.path.join(base, f"{state}.png")
+        if os.path.exists(path):
+            break
+    else:
+        log.warning("Icon not found for state: %s", state)
+        # Fallback: small black square
+        size = 22
+        px = struct.pack(">BBBB", 0xFF, 0, 0, 0)
+        return size, size, px * (size * size)
+
+    w, h, rgba = _decode_png(path)
+    return w, h, _rgba_to_argb(rgba, w, h)
+
+
+_ICON_CACHE: dict[str, list[tuple[int, int, bytes]]] = {}
+
+
+def _pixmap(state: str) -> list[tuple[int, int, bytes]]:
+    if state not in _ICON_CACHE:
+        w, h, data = _load_icon(state)
+        _ICON_CACHE[state] = [(w, h, data)]
+    return _ICON_CACHE[state]
 
 
 class StatusNotifierItemInterface(ServiceInterface):
@@ -36,8 +131,7 @@ class StatusNotifierItemInterface(ServiceInterface):
     def __init__(self) -> None:
         super().__init__(self.INTERFACE_NAME)
         self._state = "idle"
-        r, g, b = STATE_COLORS["idle"]
-        self._icon_pixmap = _pixmap_variant(r, g, b)
+        self._icon_pixmap = _pixmap("idle")
 
     @dbus_property(access=PropertyAccess.READ)
     def Category(self) -> "s":
@@ -112,11 +206,8 @@ class StatusNotifierItemInterface(ServiceInterface):
         return status
 
     def update_icon(self, state: str) -> None:
-        if state not in STATE_COLORS:
-            return
         self._state = state
-        r, g, b = STATE_COLORS[state]
-        self._icon_pixmap = _pixmap_variant(r, g, b)
+        self._icon_pixmap = _pixmap(state)
         self.emit_properties_changed({"IconPixmap": self._icon_pixmap})
         self.NewIcon()
 

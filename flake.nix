@@ -57,6 +57,11 @@
 
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
+          postInstall = ''
+            mkdir -p $out/lib/python3.13/site-packages/stt_nix/icons
+            cp assets/icons/*.png $out/lib/python3.13/site-packages/stt_nix/icons/
+          '';
+
           postFixup = ''
             wrapProgram $out/bin/stt \
               --prefix PATH : ${pkgs.lib.makeBinPath [
