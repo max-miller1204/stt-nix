@@ -9,15 +9,55 @@ import evdev.ecodes
 
 log = logging.getLogger(__name__)
 
+# Map modifier names to all their possible keycodes
+MODIFIER_KEYS = {
+    "ctrl": {evdev.ecodes.KEY_LEFTCTRL, evdev.ecodes.KEY_RIGHTCTRL},
+    "shift": {evdev.ecodes.KEY_LEFTSHIFT, evdev.ecodes.KEY_RIGHTSHIFT},
+    "alt": {evdev.ecodes.KEY_LEFTALT, evdev.ecodes.KEY_RIGHTALT},
+    "super": {evdev.ecodes.KEY_LEFTMETA, evdev.ecodes.KEY_RIGHTMETA},
+}
+
+
+def parse_hotkey(key_str: str) -> tuple[set[int], int]:
+    """Parse a hotkey string like 'ctrl+space' into (modifier_codes, key_code)."""
+    parts = [p.strip().lower() for p in key_str.split("+")]
+    modifiers: set[int] = set()
+    key_code = None
+
+    for part in parts:
+        if part in MODIFIER_KEYS:
+            modifiers |= MODIFIER_KEYS[part]
+        else:
+            # Try as evdev key name
+            name = f"KEY_{part.upper()}"
+            if name in evdev.ecodes.ecodes:
+                key_code = evdev.ecodes.ecodes[name]
+            elif part in evdev.ecodes.ecodes:
+                key_code = evdev.ecodes.ecodes[part]
+            else:
+                raise ValueError(f"Unknown key: {part}")
+
+    if key_code is None:
+        raise ValueError(f"No trigger key found in: {key_str}")
+
+    return modifiers, key_code
+
 
 class HotkeyListener:
     def __init__(self, key_name: str, mode: str, on_start, on_stop):
-        self.key_code = evdev.ecodes.ecodes[key_name]
+        self.modifiers, self.key_code = parse_hotkey(key_name)
         self.mode = mode
         self.on_start = on_start
         self.on_stop = on_stop
         self._devices: list[evdev.InputDevice] = []
         self._active = False
+        self._pressed_keys: set[int] = set()
+
+    def _modifiers_held(self) -> bool:
+        """Check if all required modifier groups are satisfied."""
+        if not self.modifiers:
+            return True
+        return bool(self._pressed_keys & self.modifiers)
 
     async def run(self):
         paths = sorted(glob.glob("/dev/input/event*"))
@@ -48,18 +88,27 @@ class HotkeyListener:
             async for event in dev.async_read_loop():
                 if event.type != evdev.ecodes.EV_KEY:
                     continue
-                if event.code != self.key_code:
-                    continue
                 if event.value == 2:  # repeat
                     continue
 
+                # Track all key presses for modifier detection
+                if event.value == 1:
+                    self._pressed_keys.add(event.code)
+                elif event.value == 0:
+                    self._pressed_keys.discard(event.code)
+
                 if self.mode == "hold":
-                    if event.value == 1:
-                        await self.on_start()
-                    elif event.value == 0:
-                        await self.on_stop()
+                    if event.code == self.key_code and event.value == 1 and self._modifiers_held():
+                        if not self._active:
+                            self._active = True
+                            await self.on_start()
+                    elif self._active and event.value == 0:
+                        # Stop on release of trigger key or any required modifier
+                        if event.code == self.key_code or event.code in self.modifiers:
+                            self._active = False
+                            await self.on_stop()
                 elif self.mode == "toggle":
-                    if event.value == 1:
+                    if event.code == self.key_code and event.value == 1 and self._modifiers_held():
                         if self._active:
                             await self.on_stop()
                         else:
