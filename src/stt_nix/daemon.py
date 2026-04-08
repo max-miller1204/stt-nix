@@ -84,7 +84,8 @@ class Daemon:
             try:
                 text = await loop.run_in_executor(self.executor, self.transcriber.transcribe, audio)
                 log.info("Transcribed: %s", text)
-                if text.strip():
+                text = text.strip()
+                if text:
                     out_cfg = self.config["output"]
                     await loop.run_in_executor(
                         self.executor, paste_text, text,
