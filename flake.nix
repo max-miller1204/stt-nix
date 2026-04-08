@@ -24,6 +24,11 @@
         config = {
           allowUnfree = true;
           cudaSupport = true;
+          # Only build for mainstream desktop GPUs; forward compat covers newer archs via PTX.
+          # To support all architectures, remove these two lines and use a larger CI runner
+          # (see: https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners).
+          cudaCapabilities = [ "7.5" "8.6" "8.9" ];
+          cudaForwardCompat = true;
         };
       };
 

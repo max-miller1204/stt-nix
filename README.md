@@ -159,3 +159,24 @@ users.users.yourname.extraGroups = [ "input" ];
 - NixOS with PipeWire
 - Wayland compositor (uses `wl-clipboard` and `dotool`)
 - NVIDIA GPU for local CUDA transcription (optional, CPU works too)
+
+## GPU compatibility
+
+The CUDA build includes native support for these GPU architectures:
+
+| Architecture | Compute capability | GPUs |
+|---|---|---|
+| Turing | 7.5 | RTX 20xx, GTX 16xx |
+| Ampere | 8.6 | RTX 30xx |
+| Ada Lovelace | 8.9 | RTX 40xx |
+
+Newer GPUs (Blackwell / RTX 50xx and beyond) are supported via forward-compatible PTX.
+
+If your GPU isn't listed, you can build from source with custom CUDA capabilities:
+
+```nix
+# In the flake, change cudaCapabilities to include your GPU's compute capability:
+cudaCapabilities = [ "7.5" "8.6" "8.9" ];  # add yours here
+```
+
+You can also use the CPU-only build (`nix run .#cpu`), which works on any machine.
